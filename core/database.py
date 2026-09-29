@@ -35,16 +35,32 @@ def init_db():
         conn.executescript(schema)
 
 
-def ensure_seed_data():
-    """Seeds the default criteria if the table is empty. Safe to call on every app startup
-    so a fresh deploy (e.g. Streamlit Community Cloud's ephemeral filesystem) always has data."""
+def dedupe_criteria_by_name():
+    """Removes duplicate rows that share the same name, keeping the lowest criterion_id.
+    Cleans up any duplicates inserted before the unique index existed (e.g. from a race
+    between concurrent Streamlit Cloud workers seeding at the same time)."""
     with get_conn() as conn:
-        existing = conn.execute("SELECT COUNT(*) AS c FROM evaluation_criteria").fetchone()["c"]
-        if existing > 0:
-            return
+        conn.execute(
+            """DELETE FROM evaluation_criteria
+               WHERE criterion_id NOT IN (
+                   SELECT MIN(criterion_id) FROM evaluation_criteria GROUP BY name
+               )"""
+        )
+
+
+def ensure_seed_data():
+    """Seeds the default criteria if missing, and cleans up any duplicate rows.
+    Race-safe: a UNIQUE index on name means concurrent seeders can't double-insert,
+    and this cleans up any duplicates a previous, non-race-safe version left behind."""
+    dedupe_criteria_by_name()
+    with get_conn() as conn:
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_criteria_name ON evaluation_criteria(name)"
+        )
         for name, description, weight, max_score in DEFAULT_CRITERIA:
             conn.execute(
-                """INSERT INTO evaluation_criteria (name, description, weight, max_score, is_active)
+                """INSERT OR IGNORE INTO evaluation_criteria
+                   (name, description, weight, max_score, is_active)
                    VALUES (?, ?, ?, ?, 1)""",
                 (name, description, weight, max_score),
             )
