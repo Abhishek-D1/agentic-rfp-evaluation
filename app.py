@@ -10,6 +10,7 @@ from core.orchestrator import run_evaluation_batch
 
 st.set_page_config(page_title="Agentic RFP Evaluation", layout="wide")
 database.init_db()
+database.ensure_seed_data()
 
 if "last_run" not in st.session_state:
     st.session_state.last_run = None

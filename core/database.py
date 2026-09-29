@@ -19,11 +19,35 @@ def get_conn():
         conn.close()
 
 
+DEFAULT_CRITERIA = [
+    ("Technical Capability", "Architecture, integrations, scalability, technical fit", 0.30, 10),
+    ("Implementation Plan", "Timeline, milestones, staffing, risk plan", 0.20, 10),
+    ("Commercial Value", "Pricing clarity, total cost, assumptions", 0.20, 10),
+    ("Security & Compliance", "Controls, certifications, privacy, auditability", 0.20, 10),
+    ("Support & Experience", "Support model, similar projects, references", 0.10, 10),
+]
+
+
 def init_db():
     with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
         schema = f.read()
     with get_conn() as conn:
         conn.executescript(schema)
+
+
+def ensure_seed_data():
+    """Seeds the default criteria if the table is empty. Safe to call on every app startup
+    so a fresh deploy (e.g. Streamlit Community Cloud's ephemeral filesystem) always has data."""
+    with get_conn() as conn:
+        existing = conn.execute("SELECT COUNT(*) AS c FROM evaluation_criteria").fetchone()["c"]
+        if existing > 0:
+            return
+        for name, description, weight, max_score in DEFAULT_CRITERIA:
+            conn.execute(
+                """INSERT INTO evaluation_criteria (name, description, weight, max_score, is_active)
+                   VALUES (?, ?, ?, ?, 1)""",
+                (name, description, weight, max_score),
+            )
 
 
 def get_active_criteria():
