@@ -34,16 +34,60 @@ with st.sidebar:
 # --------------------------------------------------------------- Criteria ---
 if page == "Criteria":
     st.title("Evaluation Criteria")
+    st.caption("The weighted rubric every supplier is scored against. Active weights must total 100%.")
     criteria = database.get_all_criteria()
     active_weight = sum(c["weight"] for c in criteria if c["is_active"])
     st.metric("Active weight total", f"{active_weight * 100:.0f}%")
     if abs(active_weight - 1.0) > 1e-6:
         st.warning("Active criteria weights should sum to 100%.")
+    else:
+        st.success("Active weights sum to 100%.")
+
+    if "editing_criterion_id" not in st.session_state:
+        st.session_state.editing_criterion_id = None
+
+    header = st.columns([2, 4, 1, 1, 1, 1])
+    for col, label in zip(header, ["Name", "Description", "Weight", "Max score", "Active", ""]):
+        col.markdown(f"**{label}**")
 
     for c in criteria:
-        with st.expander(f"{c['name']} — weight {c['weight']*100:.0f}% — {'active' if c['is_active'] else 'inactive'}"):
-            st.write(c["description"])
-            st.write(f"Max score: {c['max_score']}")
+        row = st.columns([2, 4, 1, 1, 1, 1])
+        row[0].write(c["name"])
+        row[1].write(c["description"])
+        row[2].write(f"{c['weight']*100:.0f}%")
+        row[3].write(c["max_score"])
+        row[4].write("✓" if c["is_active"] else "—")
+        if row[5].button("Edit", key=f"edit_btn_{c['criterion_id']}"):
+            st.session_state.editing_criterion_id = c["criterion_id"]
+
+        if st.session_state.editing_criterion_id == c["criterion_id"]:
+            with st.form(key=f"edit_form_{c['criterion_id']}"):
+                st.subheader(f"Edit: {c['name']}")
+                new_name = st.text_input("Name", value=c["name"])
+                new_description = st.text_area("Description", value=c["description"] or "")
+                new_weight_pct = st.number_input(
+                    "Weight (%)", min_value=0.0, max_value=100.0, value=c["weight"] * 100, step=1.0
+                )
+                new_max_score = st.number_input(
+                    "Max score", min_value=1, max_value=100, value=int(c["max_score"]), step=1
+                )
+                new_active = st.checkbox("Active", value=bool(c["is_active"]))
+
+                save_col, cancel_col = st.columns(2)
+                saved = save_col.form_submit_button("Save", type="primary")
+                cancelled = cancel_col.form_submit_button("Cancel")
+
+                if saved:
+                    database.upsert_criterion(
+                        c["criterion_id"], new_name, new_description,
+                        new_weight_pct / 100, new_max_score, new_active,
+                    )
+                    st.session_state.editing_criterion_id = None
+                    st.rerun()
+                if cancelled:
+                    st.session_state.editing_criterion_id = None
+                    st.rerun()
+        st.divider()
 
 # ------------------------------------------------- Supplier Input & Evaluate ---
 elif page == "Supplier Input & Evaluate":
